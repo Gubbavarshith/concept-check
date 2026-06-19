@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
+import { Show, SignIn, UserButton, useUser } from '@clerk/react'
 import { diagnose, type Diagnosis } from './diagnose'
-import { useAuth } from './auth'
-import Login from './Login'
+import { useSupabase } from './supabase'
 import {
   loadConcepts,
   createSession,
@@ -23,26 +23,33 @@ interface Record {
 }
 
 export default function App() {
-  const { session, loading, signOut } = useAuth()
-
-  if (loading) {
-    return (
-      <div className="page narrow">
-        <p className="sub">Loading…</p>
-      </div>
-    )
-  }
-  if (!session) return <Login />
-  return <Tool email={session.user.email ?? ''} onSignOut={signOut} />
+  return (
+    <>
+      <Show when="signed-out">
+        <div className="page narrow">
+          <header className="head">
+            <h1>Concept Check</h1>
+            <p className="sub">
+              A tool that tells you whether you truly understand a concept — or
+              only know the words for it. Sign in to start.
+            </p>
+          </header>
+          <div className="signin-wrap">
+            <SignIn routing="hash" />
+          </div>
+        </div>
+      </Show>
+      <Show when="signed-in">
+        <Tool />
+      </Show>
+    </>
+  )
 }
 
-function Tool({
-  email,
-  onSignOut,
-}: {
-  email: string
-  onSignOut: () => void
-}) {
+function Tool() {
+  const supabase = useSupabase()
+  const { user } = useUser()
+
   const [stage, setStage] = useState<Stage>('setup')
 
   // session setup
@@ -50,7 +57,6 @@ function Tool({
   const [userKind, setUserKind] = useState<'cold' | 'coached'>('cold')
   const [sessionId, setSessionId] = useState<string | null>(null)
 
-  // concepts from the DB (seeded per-user on signup)
   const [concepts, setConcepts] = useState<DbConcept[]>([])
   const [conceptsError, setConceptsError] = useState<string | null>(null)
 
@@ -63,9 +69,10 @@ function Tool({
   const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => {
-    loadConcepts()
+    loadConcepts(supabase)
       .then(setConcepts)
       .catch((e) => setConceptsError(String(e)))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function choose(c: DbConcept) {
@@ -77,6 +84,7 @@ function Tool({
     if (!concept || explanation.trim().length < 12 || busy) return
     setBusy(true)
     const d = await diagnose(
+      supabase,
       { id: concept.id, name: concept.name, prompt: concept.prompt },
       explanation,
     )
@@ -85,7 +93,6 @@ function Tool({
     setStage(d.gapSentence === null ? 'done' : 'gap')
   }
 
-  // When the human judges, persist the whole derivation.
   async function judge(value: boolean) {
     setClosed(value)
     if (!concept || !diagnosis) return
@@ -94,10 +101,10 @@ function Tool({
     try {
       let sid = sessionId
       if (!sid) {
-        sid = await createSession(concept.id, person.trim(), userKind)
+        sid = await createSession(supabase, concept.id, person.trim(), userKind)
         setSessionId(sid)
       }
-      await saveDerivation({
+      await saveDerivation(supabase, {
         sessionId: sid,
         explanation,
         gapSentence: diagnosis.gapSentence,
@@ -126,10 +133,8 @@ function Tool({
     <div className="page">
       <header className="head">
         <div className="topbar">
-          <span className="who">{email}</span>
-          <button className="link" onClick={onSignOut}>
-            sign out
-          </button>
+          <span className="who">{user?.primaryEmailAddress?.emailAddress}</span>
+          <UserButton />
         </div>
         <h1>Do you actually understand it — or just know the words?</h1>
         <p className="sub">
@@ -189,6 +194,9 @@ function Tool({
             <span className="count">{person}</span>
           </div>
           {conceptsError && <div className="form-error">{conceptsError}</div>}
+          {!conceptsError && concepts.length === 0 && (
+            <p className="sub" style={{ marginTop: 0 }}>Loading concepts…</p>
+          )}
           <ul className="concept-list">
             {concepts.map((c) => (
               <li key={c.id}>

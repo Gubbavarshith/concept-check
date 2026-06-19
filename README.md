@@ -35,9 +35,14 @@ scale — fine here, because the value is two deep cases, not a rate.
 ## Stack
 
 - **Frontend:** React + Vite + TypeScript, plain CSS.
-- **Backend:** Supabase (Postgres + Auth + Row-Level Security).
+- **Auth:** Clerk (registered as a third-party provider in Supabase).
+- **Backend:** Supabase (Postgres + Row-Level Security).
 - **The diagnoser:** a Supabase Edge Function that calls the Anthropic API
   server-side, so the API key never reaches the browser.
+
+Row-Level Security reads the Clerk user id from the JWT (`auth.jwt()->>'sub'`),
+so a user can only ever read or write their own rows — the basis of the
+two-user test.
 
 ## Data model
 
@@ -60,6 +65,10 @@ link that is both the evidence and the metric.
 
 ```bash
 npm install
-cp .env.example .env   # fill in your Supabase URL + publishable key
+cp .env.example .env        # Supabase URL + publishable key
+clerk env pull              # writes VITE_CLERK_PUBLISHABLE_KEY to .env.local
 npm run dev
 ```
+
+Clerk must be registered as a third-party auth provider in the Supabase
+project (Authentication → Sign In / Up → Clerk), using the Clerk issuer domain.

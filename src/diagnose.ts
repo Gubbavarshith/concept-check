@@ -7,7 +7,7 @@
 // write the follow-up. It NEVER judges whether the retry closed the gap. That
 // is a human decision, made in the UI.
 
-import { supabase } from './supabase'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Concept } from './seed'
 
 export interface Diagnosis {
@@ -17,12 +17,13 @@ export interface Diagnosis {
 }
 
 export async function diagnose(
+  db: SupabaseClient,
   concept: Concept,
   explanation: string,
 ): Promise<Diagnosis> {
   // Try the real server-side diagnoser first.
   try {
-    const { data, error } = await supabase.functions.invoke('diagnose', {
+    const { data, error } = await db.functions.invoke('diagnose', {
       body: {
         concept: concept.name,
         prompt: concept.prompt,

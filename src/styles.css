@@ -477,6 +477,11 @@ body {
   max-width: 440px;
 }
 
+.signin-wrap {
+  display: flex;
+  justify-content: center;
+}
+
 .topbar {
   display: flex;
   align-items: center;
