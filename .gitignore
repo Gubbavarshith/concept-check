@@ -6,3 +6,13 @@ dist
 
 # earlier derived build-spec that drifted from the official assignment (info2.md)
 info1.md
+
+# internal working notes (contains project refs / key references) — keep private
+memory.md
+
+# real people's session data with names — must not be public (handbook rule)
+transcript-1.txt
+transcript-2.txt
+
+# hackathon handbook — not ours to redistribute
+*.docx

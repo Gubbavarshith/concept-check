@@ -109,3 +109,64 @@ export async function saveDerivation(
   })
   if (error) throw error
 }
+
+// A stored past attempt — the gap→result record, joined back to its session
+// and concept. RLS guarantees this only ever returns the signed-in user's own.
+export interface PastAttempt {
+  id: string
+  createdAt: string
+  conceptName: string
+  personLabel: string
+  userKind: 'cold' | 'coached'
+  explanation: string
+  gapSentence: string | null
+  followupQuestion: string | null
+  retryAnswer: string | null
+  closeResult: 'closed' | 'not_closed' | 'unjudged'
+  judgedByHuman: boolean
+}
+
+// Shape returned by the nested Supabase select below.
+interface DerivationRow {
+  id: string
+  created_at: string
+  explanation: string
+  gap_sentence: string | null
+  followup_question: string | null
+  retry_answer: string | null
+  close_result: 'closed' | 'not_closed' | 'unjudged'
+  judged_by_human: boolean
+  sessions: {
+    person_label: string | null
+    user_kind: 'cold' | 'coached'
+    concepts: { name: string | null } | null
+  } | null
+}
+
+export async function loadPastAttempts(
+  db: SupabaseClient,
+): Promise<PastAttempt[]> {
+  const { data, error } = await db
+    .from('derivations')
+    .select(
+      `id, created_at, explanation, gap_sentence, followup_question,
+       retry_answer, close_result, judged_by_human,
+       sessions ( person_label, user_kind, concepts ( name ) )`,
+    )
+    .order('created_at', { ascending: false })
+  if (error) throw error
+
+  return ((data ?? []) as unknown as DerivationRow[]).map((r) => ({
+    id: r.id,
+    createdAt: r.created_at,
+    conceptName: r.sessions?.concepts?.name ?? 'Unknown concept',
+    personLabel: r.sessions?.person_label ?? '—',
+    userKind: r.sessions?.user_kind ?? 'cold',
+    explanation: r.explanation,
+    gapSentence: r.gap_sentence,
+    followupQuestion: r.followup_question,
+    retryAnswer: r.retry_answer,
+    closeResult: r.close_result,
+    judgedByHuman: r.judged_by_human,
+  }))
+}

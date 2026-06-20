@@ -14,13 +14,19 @@ export interface Diagnosis {
   gapSentence: string | null
   followupQuestion: string
   source: 'model' | 'local'
+  // When the model path failed and we fell back, this holds the reason so we
+  // can surface it instead of guessing.
+  fallbackReason?: string
 }
 
 export async function diagnose(
   db: SupabaseClient,
   concept: Concept,
   explanation: string,
+  // The Clerk session token, passed explicitly in the Authorization header.
+  token?: string | null,
 ): Promise<Diagnosis> {
+  let fallbackReason = 'the model call did not return a usable answer'
   // Try the real server-side diagnoser first.
   try {
     const { data, error } = await db.functions.invoke('diagnose', {
@@ -29,18 +35,35 @@ export async function diagnose(
         prompt: concept.prompt,
         explanation,
       },
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     })
-    if (!error && data && !data.error && data.followup_question) {
+    if (error) {
+      // Supabase wraps non-2xx responses in a FunctionsHttpError; pull the
+      // status/body so we know exactly why (401 gateway, 500 OpenAI, etc.).
+      let detail = error.message ?? String(error)
+      try {
+        const ctx = (error as { context?: Response }).context
+        if (ctx && typeof ctx.text === 'function') {
+          const body = await ctx.text()
+          detail = `${ctx.status} ${body}`.slice(0, 300)
+        }
+      } catch {
+        /* ignore */
+      }
+      fallbackReason = detail
+    } else if (data?.error) {
+      fallbackReason = String(data.error)
+    } else if (data?.followup_question) {
       return {
         gapSentence: data.gap_sentence ?? null,
         followupQuestion: data.followup_question,
         source: 'model',
       }
     }
-  } catch {
-    // fall through to local
+  } catch (e) {
+    fallbackReason = String(e)
   }
-  return localDiagnose(concept, explanation)
+  return { ...localDiagnose(concept, explanation), fallbackReason }
 }
 
 // ---- Local fallback (heuristic, demo-only) -------------------------------
@@ -53,6 +76,10 @@ const BUZZWORDS = [
   'response', 'database', 'store', 'data', 'http', 'json', 'rest', 'backend',
   'frontend', 'security', 'scalable', 'cloud', 'service', 'handles', 'manages',
   'communicate', 'abstraction', 'layer',
+  // memorized "comfort phrases" we saw people hide behind in real sessions —
+  // reached for when they can't derive (e.g. "it's encrypted", "salt").
+  'encrypted', 'encryption', 'hash', 'hashed', 'hashing', 'salt', 'decrypt',
+  'business logic', 'secure', 'packets',
 ]
 
 const FOLLOWUPS: Record<string, string> = {
