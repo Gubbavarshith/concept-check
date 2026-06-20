@@ -16,3 +16,6 @@ transcript-2.txt
 
 # hackathon handbook — not ours to redistribute
 *.docx
+
+# shared screenshots / scratch images — not app code
+*.png

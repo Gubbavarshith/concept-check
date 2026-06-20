@@ -19,6 +19,14 @@ export interface Diagnosis {
   fallbackReason?: string
 }
 
+// Advisory evaluation of the retry. NON-BINDING — it equips the human judge
+// with criteria + a suggested read; the human still clicks the final verdict.
+export interface Evaluation {
+  criteria: string[] // what a correct answer must explain
+  suggestion: 'closed' | 'partly' | 'not_closed' | null
+  reason: string
+}
+
 export async function diagnose(
   db: SupabaseClient,
   concept: Concept,
@@ -64,6 +72,42 @@ export async function diagnose(
     fallbackReason = String(e)
   }
   return { ...localDiagnose(concept, explanation), fallbackReason }
+}
+
+// Advisory evaluation of the retry — criteria + a non-binding suggested read.
+// The human still makes the final call in the UI. Returns null if the model is
+// unavailable (we simply don't show a suggestion in that case).
+export async function evaluate(
+  db: SupabaseClient,
+  concept: Concept,
+  gapSentence: string | null,
+  followupQuestion: string,
+  retryAnswer: string,
+  token?: string | null,
+): Promise<Evaluation | null> {
+  try {
+    const { data, error } = await db.functions.invoke('diagnose', {
+      body: {
+        action: 'evaluate',
+        concept: concept.name,
+        prompt: concept.prompt,
+        gapSentence,
+        followupQuestion,
+        retryAnswer,
+      },
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    })
+    if (error || !data || data.error || !Array.isArray(data.criteria)) return null
+    const s = data.suggestion
+    return {
+      criteria: data.criteria.filter((c: unknown) => typeof c === 'string'),
+      suggestion:
+        s === 'closed' || s === 'partly' || s === 'not_closed' ? s : null,
+      reason: typeof data.reason === 'string' ? data.reason : '',
+    }
+  } catch {
+    return null
+  }
 }
 
 // ---- Local fallback (heuristic, demo-only) -------------------------------

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSession } from '@clerk/react'
-import { diagnose, type Diagnosis } from './diagnose'
+import { diagnose, evaluate, type Diagnosis, type Evaluation } from './diagnose'
+import { CALIBRATION } from './calibration'
 import { useSupabase } from './supabase'
 import {
   loadConcepts,
@@ -9,6 +10,7 @@ import {
   loadPastAttempts,
   type DbConcept,
   type PastAttempt,
+  type Verdict,
 } from './db'
 
 // The flow, matching info2.md:
@@ -21,7 +23,7 @@ interface Record {
   explanation: string // before
   diagnosis: Diagnosis // the gap + follow-up
   retry: string // after
-  closed: boolean | null // the HUMAN's verdict
+  verdict: Verdict | null // the HUMAN's verdict (null = not yet judged)
 }
 
 export default function Tool() {
@@ -45,10 +47,14 @@ export default function Tool() {
   const [explanation, setExplanation] = useState('')
   const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null)
   const [retry, setRetry] = useState('')
-  const [closed, setClosed] = useState<boolean | null>(null)
+  const [verdict, setVerdict] = useState<Verdict | null>(null)
   const [busy, setBusy] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [inputNote, setInputNote] = useState<string | null>(null)
+  // Advisory evaluation (criteria + non-binding suggestion). 'loading' while it
+  // fetches; null if unavailable.
+  const [evaluation, setEvaluation] = useState<Evaluation | null>(null)
+  const [evalLoading, setEvalLoading] = useState(false)
 
   useEffect(() => {
     loadConcepts(supabase)
@@ -86,8 +92,28 @@ export default function Tool() {
     setStage(d.gapSentence === null ? 'done' : 'gap')
   }
 
-  async function judge(value: boolean) {
-    setClosed(value)
+  // Move to the result, fetching the advisory evaluation (criteria + suggested
+  // read) for the human judge. The human still decides; this only informs.
+  async function seeResult() {
+    if (!concept || !diagnosis) return
+    setStage('done')
+    setEvaluation(null)
+    setEvalLoading(true)
+    const token = (await session?.getToken()) ?? null
+    const ev = await evaluate(
+      supabase,
+      { id: concept.id, name: concept.name, prompt: concept.prompt },
+      diagnosis.gapSentence,
+      diagnosis.followupQuestion,
+      retry,
+      token,
+    )
+    setEvaluation(ev)
+    setEvalLoading(false)
+  }
+
+  async function judge(value: Verdict) {
+    setVerdict(value)
     if (!concept || !diagnosis) return
     setBusy(true)
     setSaveError(null)
@@ -103,7 +129,7 @@ export default function Tool() {
         gapSentence: diagnosis.gapSentence,
         followupQuestion: diagnosis.followupQuestion,
         retryAnswer: retry,
-        closed: value,
+        verdict: value,
       })
     } catch (e) {
       setSaveError(String(e))
@@ -118,9 +144,11 @@ export default function Tool() {
     setExplanation('')
     setDiagnosis(null)
     setRetry('')
-    setClosed(null)
+    setVerdict(null)
     setSaveError(null)
     setInputNote(null)
+    setEvaluation(null)
+    setEvalLoading(false)
   }
 
   return (
@@ -302,7 +330,7 @@ export default function Tool() {
           <div className="row end">
             <button
               className="btn"
-              onClick={() => setStage('done')}
+              onClick={seeResult}
               disabled={retry.trim().length < 8}
             >
               See the result →
@@ -313,10 +341,12 @@ export default function Tool() {
 
       {view === 'check' && stage === 'done' && concept && diagnosis && (
         <Result
-          record={{ concept, explanation, diagnosis, retry, closed }}
+          record={{ concept, explanation, diagnosis, retry, verdict }}
           person={person}
           busy={busy}
           saveError={saveError}
+          evaluation={evaluation}
+          evalLoading={evalLoading}
           onJudge={judge}
           onReset={reset}
         />
@@ -369,12 +399,20 @@ function PastAttempts({ supabase }: { supabase: ReturnType<typeof useSupabase> }
         <article className="attempt card" key={a.id}>
           <div className="attempt-top">
             <span className="concept-tag">{a.conceptName}</span>
-            <span className={`verdict-chip ${a.closeResult}`}>
+            <span
+              className={`verdict-chip ${
+                a.closeResult === 'unjudged' && a.judgedByHuman
+                  ? 'partly'
+                  : a.closeResult
+              }`}
+            >
               {a.closeResult === 'closed'
                 ? 'gap closed'
                 : a.closeResult === 'not_closed'
                   ? 'still open'
-                  : 'unjudged'}
+                  : a.judgedByHuman
+                    ? 'partly closed'
+                    : 'unjudged'}
             </span>
           </div>
 
@@ -443,6 +481,8 @@ function Result({
   person,
   busy,
   saveError,
+  evaluation,
+  evalLoading,
   onJudge,
   onReset,
 }: {
@@ -450,10 +490,12 @@ function Result({
   person: string
   busy: boolean
   saveError: string | null
-  onJudge: (v: boolean) => void
+  evaluation: Evaluation | null
+  evalLoading: boolean
+  onJudge: (v: Verdict) => void
   onReset: () => void
 }) {
-  const { concept, explanation, diagnosis, retry, closed } = record
+  const { concept, explanation, diagnosis, retry, verdict } = record
   const noGap = diagnosis.gapSentence === null
 
   return (
@@ -477,6 +519,68 @@ function Result({
           </div>
           <Block label="After — once the gap was named" body={retry} />
 
+          {/* ADVISORY: criteria + non-binding read to inform the human judge.
+              The model does NOT decide — it equips the person who does. */}
+          {evalLoading && (
+            <div className="eval-box loading">
+              <span className="hint-label">Checking the answer against criteria…</span>
+            </div>
+          )}
+          {!evalLoading && evaluation && (
+            <div className="eval-box">
+              <span className="hint-label">
+                What a real answer needs to explain
+              </span>
+              <ul className="eval-criteria">
+                {evaluation.criteria.map((c, i) => (
+                  <li key={i}>{c}</li>
+                ))}
+              </ul>
+              {evaluation.suggestion && (
+                <p className={`eval-suggestion ${evaluation.suggestion}`}>
+                  <strong>
+                    AI’s read (suggestion only):{' '}
+                    {evaluation.suggestion === 'closed'
+                      ? 'looks closed'
+                      : evaluation.suggestion === 'partly'
+                        ? 'looks partly closed'
+                        : 'looks not closed'}
+                  </strong>
+                  {evaluation.reason ? ` — ${evaluation.reason}` : ''}
+                </p>
+              )}
+              <p className="eval-note mono">
+                This is a suggestion. You make the final call.
+              </p>
+            </div>
+          )}
+
+          {/* CALIBRATION: a real graded Move-1 answer for THIS concept, shown as
+              reference so the judge can calibrate. Reference, not the bar. */}
+          {CALIBRATION[concept.name] && (
+            <div className="calib-box">
+              <span className="hint-label">
+                For reference — a real graded answer (from my by-hand sessions)
+              </span>
+              <p className="calib-answer">
+                “{CALIBRATION[concept.name].answer}”
+              </p>
+              <p className="calib-meta">
+                <span className={`verdict-chip ${CALIBRATION[concept.name].grade}`}>
+                  {CALIBRATION[concept.name].grade === 'closed'
+                    ? 'graded: closed'
+                    : CALIBRATION[concept.name].grade === 'partly'
+                      ? 'graded: partly'
+                      : 'graded: not closed'}
+                </span>{' '}
+                <span className="calib-person mono">
+                  {CALIBRATION[concept.name].person}
+                </span>
+              </p>
+              <p className="calib-note">{CALIBRATION[concept.name].note}</p>
+            </div>
+          )}
+
           {/* MOVE 3: the human — not the model — judges if the gap closed. */}
           <div className="judge-box">
             <span className="hint-label">
@@ -487,27 +591,36 @@ function Result({
               this time — not if they just reworded the same phrase, agreed, or
               said “oh right.” Be strict: a generous yes makes the result useless.
             </p>
-            <div className="judge-buttons">
+            <div className="judge-buttons three">
               <button
-                className={`judge-btn yes ${closed === true ? 'on' : ''}`}
-                onClick={() => onJudge(true)}
+                className={`judge-btn yes ${verdict === 'closed' ? 'on' : ''}`}
+                onClick={() => onJudge('closed')}
                 disabled={busy}
               >
                 Yes — they derived it
               </button>
               <button
-                className={`judge-btn no ${closed === false ? 'on' : ''}`}
-                onClick={() => onJudge(false)}
+                className={`judge-btn partly ${verdict === 'partly' ? 'on' : ''}`}
+                onClick={() => onJudge('partly')}
+                disabled={busy}
+              >
+                Partly — closed some of it
+              </button>
+              <button
+                className={`judge-btn no ${verdict === 'not_closed' ? 'on' : ''}`}
+                onClick={() => onJudge('not_closed')}
                 disabled={busy}
               >
                 No — still stuck
               </button>
             </div>
-            {closed !== null && !saveError && (
+            {verdict !== null && !saveError && (
               <p className="judge-verdict">
-                {closed
+                {verdict === 'closed'
                   ? 'Recorded as a genuine shift: couldn’t derive → could.'
-                  : 'Recorded as not closed — the gap stayed open.'}
+                  : verdict === 'partly'
+                    ? 'Recorded as a partial close — some of the gap remains.'
+                    : 'Recorded as not closed — the gap stayed open.'}
                 {busy ? ' Saving…' : ' Saved.'}
               </p>
             )}

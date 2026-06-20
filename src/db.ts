@@ -84,13 +84,18 @@ export async function createSession(
   return data.id
 }
 
+// The human's verdict on the second derivation. 'partly' covers the in-between
+// cases (closed some of it, but not fully). It maps to the existing 'unjudged'
+// enum value in the DB, distinguished from "never judged" by judged_by_human.
+export type Verdict = 'closed' | 'not_closed' | 'partly'
+
 export interface SaveDerivation {
   sessionId: string
   explanation: string
   gapSentence: string | null
   followupQuestion: string
   retryAnswer: string
-  closed: boolean | null
+  verdict: Verdict
 }
 
 export async function saveDerivation(
@@ -103,9 +108,10 @@ export async function saveDerivation(
     gap_sentence: d.gapSentence,
     followup_question: d.followupQuestion,
     retry_answer: d.retryAnswer,
-    close_result:
-      d.closed === null ? 'unjudged' : d.closed ? 'closed' : 'not_closed',
-    judged_by_human: d.closed !== null,
+    // 'partly' has no dedicated enum value; store it as 'unjudged' but flag that
+    // a human did make the call.
+    close_result: d.verdict === 'partly' ? 'unjudged' : d.verdict,
+    judged_by_human: true,
   })
   if (error) throw error
 }

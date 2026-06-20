@@ -1463,6 +1463,20 @@ body {
   color: var(--paper);
   border-color: var(--paper-red);
 }
+/* third verdict — partly: a muted amber/brown middle tone */
+.tool-ed .judge-btn.partly.on {
+  background: #b07a14;
+  color: var(--paper);
+  border-color: #b07a14;
+}
+/* the three-way row wraps on narrow screens */
+.tool-ed .judge-buttons.three {
+  flex-wrap: wrap;
+}
+.tool-ed .judge-buttons.three .judge-btn {
+  flex: 1 1 30%;
+  min-width: 130px;
+}
 .tool-ed .judge-verdict {
   font-family: var(--mono);
   font-size: 13px;
@@ -1476,6 +1490,82 @@ body {
   border-left: 2px solid var(--paper-red);
   padding: 12px 14px;
   margin: 12px 0 4px;
+}
+
+/* advisory evaluation panel (criteria + non-binding suggestion) */
+.tool-ed .eval-box {
+  border: 1.5px solid var(--paper-ink);
+  background: #fbfaf6;
+  padding: 16px;
+  margin: 18px 0 0;
+}
+.tool-ed .eval-box.loading {
+  color: #6b6356;
+}
+.tool-ed .eval-criteria {
+  margin: 10px 0 14px;
+  padding-left: 18px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--paper-ink);
+}
+.tool-ed .eval-criteria li {
+  margin-bottom: 6px;
+}
+.tool-ed .eval-suggestion {
+  font-size: 15px;
+  line-height: 1.5;
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--paper-line);
+}
+.tool-ed .eval-suggestion.closed {
+  border-left-color: var(--paper-ink);
+}
+.tool-ed .eval-suggestion.partly {
+  border-left-color: #b07a14;
+}
+.tool-ed .eval-suggestion.not_closed {
+  border-left-color: var(--paper-red);
+}
+.tool-ed .eval-note {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b6356;
+  margin: 0;
+}
+
+/* calibration reference card (a real graded Move-1 answer) */
+.tool-ed .calib-box {
+  border: 1px dashed var(--paper-line);
+  background: transparent;
+  padding: 14px 16px;
+  margin: 16px 0 0;
+}
+.tool-ed .calib-answer {
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 16px;
+  line-height: 1.5;
+  color: #4a443b;
+  margin: 8px 0 10px;
+}
+.tool-ed .calib-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+}
+.tool-ed .calib-person {
+  font-size: 12px;
+  color: #6b6356;
+}
+.tool-ed .calib-note {
+  font-size: 13px;
+  line-height: 1.55;
+  color: #6b6356;
+  margin: 0;
 }
 .tool-ed .judge-guide strong {
   color: var(--paper-ink);
@@ -1569,6 +1659,11 @@ body {
   background: var(--paper-red);
   color: var(--paper);
   border-color: var(--paper-red);
+}
+.verdict-chip.partly {
+  background: #b07a14;
+  color: var(--paper);
+  border-color: #b07a14;
 }
 .verdict-chip.unjudged {
   color: #6b6356;
