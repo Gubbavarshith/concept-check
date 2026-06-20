@@ -4,8 +4,9 @@ dist
 .DS_Store
 *.local
 
-# earlier derived build-spec that drifted from the official assignment (info2.md)
+# the official assignment briefs — not ours to publish in the repo
 info1.md
+info2.md
 
 # internal working notes (contains project refs / key references) — keep private
 memory.md
